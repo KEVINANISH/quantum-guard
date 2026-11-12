@@ -24,3 +24,5 @@ html,body,#root,.app-shell,.main,.page-wrap{max-width:100%;overflow-x:hidden}.ta
 @media(min-width:1051px) and (max-width:1500px){.metric-top{font-size:14px!important}.page-heading h1{font-size:44px!important}.landing-hero{grid-template-columns:1fr .75fr}.landing-emblem{max-width:100%;transform:none}}
 
 
+.command-palette{background:rgba(6,13,32,.97)!important;backdrop-filter:none}
+.command-backdrop{background:rgba(3,7,17,.72)}
