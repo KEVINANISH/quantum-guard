@@ -26,3 +26,7 @@ html,body,#root,.app-shell,.main,.page-wrap{max-width:100%;overflow-x:hidden}.ta
 
 .command-palette{background:rgba(6,13,32,.97)!important;backdrop-filter:none}
 .command-backdrop{background:rgba(3,7,17,.72)}
+
+.how-it-works{border:0!important;background:none!important;padding:0!important;margin:2px 0 18px!important;box-shadow:none!important}
+.how-it-works .how-icon,.how-it-works b{display:none!important}
+.how-it-works p{font-size:15px!important;color:#d5deee!important;margin:0!important;line-height:1.55}
