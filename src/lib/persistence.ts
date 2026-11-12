@@ -65,3 +65,14 @@ export function saveScanHistory(history: ScanRecord[]) {
   if (history[0]) writeJson(LEGACY_SCAN_KEY, history[0].completedAt)
   return ok
 }
+
+export function resetDemoStorage() {
+  try {
+    localStorage.removeItem(ASSET_KEY)
+    localStorage.removeItem(CERTIFICATE_KEY)
+    localStorage.removeItem(SCAN_HISTORY_KEY)
+    localStorage.removeItem(LEGACY_SCAN_KEY)
+  } catch {
+    // A reload will reinitialize in-memory demo state even when storage is unavailable.
+  }
+}
