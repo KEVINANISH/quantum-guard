@@ -5,9 +5,9 @@ type NetworkInfo = { saveData?: boolean; effectiveType?: string; addEventListene
 type IdleWindow = Window & { requestIdleCallback?: (callback:()=>void, options?:{timeout:number})=>number; cancelIdleCallback?: (id:number)=>void }
 
 function networkAllowsVideo() {
-  if (typeof window === 'undefined' || window.innerWidth < 768) return false
+  if (typeof window === 'undefined') return false
   const connection=(navigator as Navigator & {connection?:NetworkInfo}).connection
-  return !connection?.saveData && !['slow-2g','2g','3g'].includes(connection?.effectiveType ?? '')
+  return !connection?.saveData && !['slow-2g','2g'].includes(connection?.effectiveType ?? '')
 }
 
 export default function VideoBackground({ src }: VideoBackgroundProps) {
