@@ -6,6 +6,9 @@ export function severityFor(algorithm: Asset['algorithm']): Severity {
   if (algorithm === 'AES-128') return 'Medium'
   return 'Safe'
 }
+export function requiresMigrationAlgorithm(algorithm: Asset['algorithm']) { return severityFor(algorithm) !== 'Safe' }
+export function needsMigration(asset: Asset) { return asset.migrationRequired }
+export function isPostQuantumReady(asset: Asset) { return asset.migrated || !needsMigration(asset) }
 export function riskFor(asset: Asset) { return ({Critical: 95, High: 78, Medium: 52, Safe: 8} as const)[severityFor(asset.algorithm)] }
 export function overallRisk(assets: Asset[]) { return assets.length ? Math.round(assets.reduce((n,a)=>n+(a.migrated?0:riskFor(a)),0)/assets.length) : 0 }
 export function targetForAsset(asset: Asset): Asset['algorithm'] {

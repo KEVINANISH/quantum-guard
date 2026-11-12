@@ -1,81 +1,86 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-const VIDEO_SOURCES = ['/videos/bg1.mp4.mp4', '/videos/bg2.mp4.mp4', '/videos/bg3.mp4.mp4'] as const
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 type VideoBackgroundProps = { src: string }
 
 export default function VideoBackground({ src }: VideoBackgroundProps) {
-  const videos = useRef<(HTMLVideoElement | null)[]>([])
-  const retryArmed = useRef(false)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const retryListenersArmed = useRef(false)
   const retryHandler = useRef<(() => void) | null>(null)
-  const [failedSources, setFailedSources] = useState<string[]>([])
+  const [readySrc, setReadySrc] = useState<string | null>(null)
+  const [failedSrc, setFailedSrc] = useState<string | null>(null)
 
   const removeRetryListeners = useCallback(() => {
-    if (retryHandler.current) {
-      for (const event of ['pointerdown', 'keydown', 'scroll', 'touchstart']) {
-        window.removeEventListener(event, retryHandler.current)
-      }
+    const retry = retryHandler.current
+    if (retry) {
+      window.removeEventListener('click', retry)
+      window.removeEventListener('keydown', retry)
       retryHandler.current = null
     }
-    retryArmed.current = false
+    retryListenersArmed.current = false
   }, [])
 
-  const armRetry = useCallback(() => {
-    if (retryArmed.current) return
-    retryArmed.current = true
+  const armRetry = useCallback((video: HTMLVideoElement) => {
+    if (retryListenersArmed.current) return
+    retryListenersArmed.current = true
     const retry = () => {
       removeRetryListeners()
-      videos.current.forEach(video => {
-        if (video) { video.muted = true; video.defaultMuted = true; video.playsInline = true; video.loop = true; void video.play().catch(() => {}) }
+      video.muted = true
+      video.defaultMuted = true
+      video.loop = true
+      video.playsInline = true
+      video.autoplay = true
+      void video.play().catch((error: unknown) => {
+        console.error(error)
+        setFailedSrc(src)
       })
     }
     retryHandler.current = retry
-    for (const event of ['pointerdown', 'keydown', 'scroll', 'touchstart']) {
-      window.addEventListener(event, retry, { once: true, passive: true })
-    }
-  }, [removeRetryListeners])
+    window.addEventListener('click', retry, { once: true })
+    window.addEventListener('keydown', retry, { once: true })
+  }, [removeRetryListeners, src])
 
-  const playVideo = useCallback((video: HTMLVideoElement) => {
+  const playVideo = useCallback((video: HTMLVideoElement, afterGesture = false) => {
     video.muted = true
     video.defaultMuted = true
-    video.playsInline = true
     video.loop = true
-    void video.play().catch(armRetry)
-  }, [armRetry])
+    video.playsInline = true
+    video.autoplay = true
+    void video.play().catch((error: unknown) => {
+      if (!afterGesture && error instanceof Error && error.name === 'NotAllowedError') {
+        armRetry(video)
+        return
+      }
+      console.error(error)
+      setFailedSrc(src)
+    })
+  }, [armRetry, src])
 
-  const videoRefCallbacks = useMemo(() => VIDEO_SOURCES.map((_, index) => (video: HTMLVideoElement | null) => {
-    videos.current[index] = video
-    if (video) playVideo(video)
-  }), [playVideo])
-  const handlePlayable = (source: string, video: HTMLVideoElement) => {
-    setFailedSources(current => current.includes(source) ? current.filter(item => item !== source) : current)
-    playVideo(video)
-  }
+  const bindVideo = useCallback((element: HTMLVideoElement | null) => {
+    videoRef.current = element
+    if (element) playVideo(element)
+  }, [playVideo])
 
   useEffect(() => {
-    const target = videos.current.find(video => video?.dataset.videoSource === src)
-    if (target) playVideo(target)
-  }, [src, playVideo])
+    const video = videoRef.current
+    if (video) playVideo(video)
+    return removeRetryListeners
+  }, [src, playVideo, removeRetryListeners])
 
   useEffect(() => {
     const resumeWhenVisible = () => {
-      if (document.visibilityState === 'visible') {
-        videos.current.forEach(video => { if (video) playVideo(video) })
-      }
+      if (document.visibilityState === 'visible' && videoRef.current) playVideo(videoRef.current)
     }
     document.addEventListener('visibilitychange', resumeWhenVisible)
-    return () => {
-      document.removeEventListener('visibilitychange', resumeWhenVisible)
-      removeRetryListeners()
-    }
-  }, [playVideo, removeRetryListeners])
+    return () => document.removeEventListener('visibilitychange', resumeWhenVisible)
+  }, [playVideo])
 
   return (
-    <div className="video-background" aria-hidden="true">
-      {VIDEO_SOURCES.map((source, index) => <video
-        key={source}
-        ref={videoRefCallbacks[index]}
-        className={`video-background__video ${source === src && !failedSources.includes(source) ? 'is-active' : ''}`}
-        data-video-source={source}
+    <div className={`video-background${failedSrc === src ? ' has-failed' : ''}`} aria-hidden="true">
+      <video
+        key={src}
+        ref={bindVideo}
+        className={`video-background__video${readySrc === src && failedSrc !== src ? ' is-ready' : ''}`}
+        src={src}
         autoPlay
         muted
         loop
@@ -83,12 +88,18 @@ export default function VideoBackground({ src }: VideoBackgroundProps) {
         preload="auto"
         disablePictureInPicture
         disableRemotePlayback
-        onLoadedData={event => handlePlayable(source, event.currentTarget)}
-        onCanPlay={event => handlePlayable(source, event.currentTarget)}
-        onCanPlayThrough={event => handlePlayable(source, event.currentTarget)}
-        onError={() => setFailedSources(current => current.includes(source) ? current : [...current, source])}
+        onLoadedData={event => {
+          setReadySrc(src)
+          setFailedSrc(current => current === src ? null : current)
+          playVideo(event.currentTarget)
+        }}
+        onError={event => {
+          const error = event.currentTarget.error ?? event.nativeEvent
+          console.error(error)
+          setFailedSrc(src)
+        }}
         style={{ pointerEvents: 'none' }}
-      ><source src={source} type="video/mp4" /></video>)}
+      />
       <div className="video-background__overlay" />
     </div>
   )

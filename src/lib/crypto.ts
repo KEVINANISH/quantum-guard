@@ -37,3 +37,68 @@ export async function runBenchmarks() {
 export async function signCertificatePayload(payload: string) {
  const keys=ml_dsa65.keygen(random(ml_dsa65.lengths.seed!)); const bytes=new TextEncoder().encode(payload); const signature=ml_dsa65.sign(bytes,keys.secretKey); return {publicKey:toHex(keys.publicKey,keys.publicKey.length),signature:toHex(signature,ml_dsa65.lengths.signature!),valid:ml_dsa65.verify(signature,bytes,keys.publicKey)}
 }
+
+export type CryptoSelfTestCheck = { group: string; test: string; passed: boolean; actual: string; expected: string }
+const bytesEqual = (left: Uint8Array, right: Uint8Array) => left.length === right.length && left.every((byte,index)=>byte===right[index])
+const selfTestError = (error: unknown) => error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+
+export async function runCryptoSelfTests(): Promise<CryptoSelfTestCheck[]> {
+  const checks: CryptoSelfTestCheck[] = []
+  const record = (group:string,test:string,passed:boolean,actual:string,expected:string) => checks.push({group,test,passed,actual,expected})
+
+  try {
+    const recipient=ml_kem768.keygen(random(ml_kem768.lengths.seed!))
+    const differentRecipient=ml_kem768.keygen(random(ml_kem768.lengths.seed!))
+    const encapsulated=ml_kem768.encapsulate(recipient.publicKey,random(ml_kem768.lengths.msgRand!))
+    const recovered=ml_kem768.decapsulate(encapsulated.cipherText,recipient.secretKey)
+    const rejectedKeySecret=ml_kem768.decapsulate(encapsulated.cipherText,differentRecipient.secretKey)
+    const matches=bytesEqual(encapsulated.sharedSecret,recovered)
+    const different= !bytesEqual(encapsulated.sharedSecret,rejectedKeySecret)
+    record('ML-KEM-768','Encapsulation and decapsulation match',matches,`encapsulated secret ${toHex(encapsulated.sharedSecret,32)}; decapsulated secret ${toHex(recovered,32)}; equal: ${matches}`,'Both shared secrets equal')
+    record('ML-KEM-768','Wrong private key yields a different secret',different,`wrong-key secret ${toHex(rejectedKeySecret,32)} differs from encapsulated secret ${toHex(encapsulated.sharedSecret,32)}: ${different}`,'Shared secret is different')
+  } catch(error) {
+    record('ML-KEM-768','Encapsulation and decapsulation',false,selfTestError(error),'Both shared secrets equal; wrong-key secret differs')
+  }
+
+  try {
+    const pair=ml_dsa65.keygen(random(ml_dsa65.lengths.seed!))
+    const message='Quantum Guard self-test message.'
+    const bytes=new TextEncoder().encode(message)
+    const signature=ml_dsa65.sign(bytes,pair.secretKey)
+    const valid=ml_dsa65.verify(signature,bytes,pair.publicKey)
+    const changed=message.replace('Q','R')
+    const changedBytes=new TextEncoder().encode(changed)
+    const invalid=ml_dsa65.verify(signature,changedBytes,pair.publicKey)
+    record('ML-DSA-65','Signature verifies for the signed message',valid,`message "${message}"; verify → ${valid}; signature ${signature.length} bytes`,'verify(original) → true')
+    record('ML-DSA-65','Changed message is rejected',!invalid,`changed message "${changed}"; verify → ${invalid}`,'verify(changed message) → false')
+  } catch(error) {
+    record('ML-DSA-65','Sign and verify',false,selfTestError(error),'Original verifies; changed message does not')
+  }
+
+  try {
+    const key=await crypto.subtle.generateKey({name:'AES-GCM',length:256},true,['encrypt','decrypt'])
+    const iv=random(12)
+    const plaintext=new TextEncoder().encode('authenticated encryption tamper test')
+    const ciphertext=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,plaintext))
+    const altered=ciphertext.slice()
+    altered[0]^=1
+    let rejected=false
+    let failure='decryption unexpectedly succeeded'
+    try { await crypto.subtle.decrypt({name:'AES-GCM',iv},key,altered) }
+    catch(error) { rejected=true; failure=error instanceof Error?`${error.name}: tampering rejected`:String(error) }
+    record('AES-GCM','Modified ciphertext fails authentication',rejected,`${ciphertext.length} byte ciphertext; ${failure}`,'Decryption rejects modified ciphertext')
+  } catch(error) {
+    record('AES-GCM','Encrypt and reject tampering',false,selfTestError(error),'Encryption succeeds; modified ciphertext is rejected')
+  }
+
+  const sizes:[string,number|undefined,number,string][]=[
+    ['ML-KEM-768 public key',ml_kem768.lengths.publicKey,1184,'ML-KEM-768'],
+    ['ML-KEM-768 ciphertext',ml_kem768.lengths.cipherText,1088,'ML-KEM-768'],
+    ['ML-DSA-65 public key',ml_dsa65.lengths.publicKey,1952,'ML-DSA-65'],
+    ['ML-DSA-65 signature',ml_dsa65.lengths.signature,3309,'ML-DSA-65'],
+    ['SLH-DSA-SHA2-128f public key',slh_dsa_sha2_128f.lengths.publicKey,32,'SLH-DSA-SHA2-128f'],
+    ['SLH-DSA-SHA2-128f signature',slh_dsa_sha2_128f.lengths.signature,17088,'SLH-DSA-SHA2-128f'],
+  ]
+  for(const [test,actual,expected,group] of sizes) record(group,`${test} matches FIPS size`,actual===expected,`${actual??'unavailable'} bytes`,`${expected} bytes`)
+  return checks
+}
